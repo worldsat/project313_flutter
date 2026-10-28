@@ -14,24 +14,24 @@ class SpecPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(50),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
             icon,
-            size: 13,
-            color: AppColors.onSurfaceVariant,
+            size: 14,
+            color: AppColors.primary,
           ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(
             text,
             style: const TextStyle(
-              fontSize: 11.5,
+              fontSize: 12,
               fontWeight: FontWeight.w500,
               color: AppColors.onSurfaceVariant,
             ),

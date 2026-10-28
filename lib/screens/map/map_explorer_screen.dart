@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../../controllers/estate_controller.dart';
 import '../../data/mock_data.dart';
+import '../../models/navigation_tab.dart';
 import '../../theme/app_colors.dart';
 import '../detail/estate_detail_screen.dart';
-import 'components/architectural_map_canvas.dart';
+import 'components/list_view_fab.dart';
+import 'components/map_estate_preview_sheet.dart';
+import 'components/map_filter_chips_row.dart';
+import 'components/map_search_bar.dart';
+import 'components/map_top_bar.dart';
+import 'components/real_interactive_map.dart';
 
-class MapExplorerScreen extends StatelessWidget {
+class MapExplorerScreen extends StatefulWidget {
   final EstateController controller;
 
   const MapExplorerScreen({
@@ -13,243 +21,171 @@ class MapExplorerScreen extends StatelessWidget {
     required this.controller,
   });
 
+  @override
+  State<MapExplorerScreen> createState() => _MapExplorerScreenState();
+}
+
+class _MapExplorerScreenState extends State<MapExplorerScreen> {
+  final MapController _mapController = MapController();
+  MapLayerType _currentLayerType = MapLayerType.street;
+
   void _openDetail(BuildContext context, String estateId) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => EstateDetailScreen(
           estateId: estateId,
-          controller: controller,
+          controller: widget.controller,
         ),
       ),
     );
   }
 
+  void _showFeedback(String message) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedCornerShapeBorder(),
+        backgroundColor: AppColors.darkFabBg,
+      ),
+    );
+  }
+
+  void _cycleLayer() {
+    setState(() {
+      _currentLayerType = switch (_currentLayerType) {
+        MapLayerType.street => MapLayerType.topo,
+        MapLayerType.topo => MapLayerType.satellite,
+        MapLayerType.satellite => MapLayerType.street,
+      };
+    });
+    _showFeedback('Switched to ${_currentLayerType.displayName}');
+  }
+
+  void _locateAustin() {
+    _mapController.move(const LatLng(30.2780, -97.7780), 12.5);
+    _showFeedback('Centered on Austin Hill Country reserve');
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: controller,
+      listenable: widget.controller,
       builder: (context, _) {
-        final selectedEstate = controller.selectedMapEstate;
+        final selectedEstate = widget.controller.selectedMapEstate;
+        final isSaved = widget.controller.isEstateSaved(selectedEstate.id);
 
         return Scaffold(
-          body: Stack(
+          backgroundColor: AppColors.background,
+          body: Column(
             children: [
-              // 1. Vector Map Canvas Background
-              Positioned.fill(
-                child: ArchitecturalMapCanvas(
-                  pins: MockData.mapPins,
-                  selectedEstateId: controller.selectedMapEstateId,
-                  onPinSelected: (id) => controller.selectMapEstate(id),
-                ),
+              // 1. Top Header Bar (Verdant Estates + Location + Notification + Avatar)
+              MapTopBar(
+                location: 'Austin, TX',
+                unreadNotifications: 2,
+                onNotificationsClick: () {
+                  _showFeedback('2 new architectural reserves added today');
+                },
+                onProfileClick: () {
+                  _showFeedback('Advisor Profile: Sarah Jenkins');
+                },
               ),
 
-              // 2. Floating Top Search & Filter Bar
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0, vertical: 8.0),
-                  child: Container(
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(50),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.12),
-                          blurRadius: 14,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                      border: Border.all(
-                        color: AppColors.outlineVariant.withOpacity(0.4),
+              // 2. Map Canvas + Floating Overlays
+              Expanded(
+                child: Stack(
+                  children: [
+                    // A. Real Interactive Map (OpenStreetMap & Esri layers, Austin, TX)
+                    Positioned.fill(
+                      child: RealInteractiveMap(
+                        pins: MockData.mapPins,
+                        selectedEstateId: widget.controller.selectedMapEstateId,
+                        layerType: _currentLayerType,
+                        mapController: _mapController,
+                        onPinSelected: (id) {
+                          widget.controller.selectMapEstate(id);
+                        },
                       ),
                     ),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.search,
-                          color: AppColors.primary,
-                          size: 22,
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Search Austin neighborhoods...',
-                            style: TextStyle(
-                              color: AppColors.outline,
-                              fontSize: 13.5,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: const BoxDecoration(
-                            color: AppColors.secondaryContainer,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.layers_outlined,
-                            size: 18,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
 
-              // 3. Bottom Preview Card (Interactive Bottom Sheet Card)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: 16,
-                child: Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: AppColors.outlineVariant.withOpacity(0.3),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Drag Handle Indicator
-                      Container(
-                        width: 36,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: AppColors.outlineVariant,
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Card Content
-                      Row(
+                    // B. Top Floating Search & Filter Chips Row
+                    Positioned(
+                      top: 10,
+                      left: 0,
+                      right: 0,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Thumbnail Photo
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(16),
-                            child: Image.asset(
-                              selectedEstate.imageAsset,
-                              width: 82,
-                              height: 82,
-                              fit: BoxFit.cover,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: MapSearchBar(
+                              regionTitle: 'Travis County, Austin',
+                              activeReservesCount: 28,
+                              onSearchClick: () {
+                                _showFeedback('Search Austin neighborhoods');
+                              },
+                              onLayersClick: _cycleLayer,
+                              onLocateClick: _locateAustin,
                             ),
                           ),
-                          const SizedBox(width: 12),
-
-                          // Text Info
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      selectedEstate.formattedPrice,
-                                      style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.onSurface,
-                                      ),
-                                    ),
-                                    if (selectedEstate.statusTag != null)
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.secondaryContainer,
-                                          borderRadius:
-                                              BorderRadius.circular(50),
-                                        ),
-                                        child: Text(
-                                          selectedEstate.statusTag!,
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  selectedEstate.title,
-                                  style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.onSurface,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  selectedEstate.address,
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    color: AppColors.outline,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  '${selectedEstate.beds ?? 4} Beds • ${selectedEstate.baths ?? 4} Baths • ${selectedEstate.sqft ?? 3900} sqft',
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
+                          const SizedBox(height: 10),
+                          MapFilterChipsRow(
+                            onFiltersClick: () {
+                              _showFeedback('3 luxury filters active');
+                            },
+                            onPriceFilterClick: () {
+                              _showFeedback('Price filter: \$1.5M - \$5M');
+                            },
+                            onBedsFilterClick: () {
+                              _showFeedback('Filtered: 3+ Beds');
+                            },
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                    ),
 
-                      // CTA Button: View Estate
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              _openDetail(context, selectedEstate.id),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.darkFabBg,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(50),
+                    // C. Bottom Floating "List View" FAB + Estate Preview Sheet
+                    Positioned(
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // Floating "List View (28)" Pill Button
+                          Padding(
+                            padding: const EdgeInsets.only(right: 16.0, bottom: 10.0),
+                            child: ListViewFab(
+                              count: 28,
+                              onClick: () {
+                                widget.controller.navigateToTab(NavigationTab.explore);
+                              },
                             ),
                           ),
-                          child: const Text(
-                            'View Estate Details',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
+
+                          // Bottom Estate Preview Sheet
+                          MapEstatePreviewSheet(
+                            estate: selectedEstate,
+                            isSaved: isSaved,
+                            onToggleSave: () {
+                              widget.controller.toggleSave(selectedEstate.id);
+                            },
+                            onDirectionsClick: () {
+                              _showFeedback(
+                                'Navigating to ${selectedEstate.address}...',
+                              );
+                            },
+                            onViewDetailsClick: (id) {
+                              _openDetail(context, id);
+                            },
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -258,4 +194,11 @@ class MapExplorerScreen extends StatelessWidget {
       },
     );
   }
+}
+
+class RoundedCornerShapeBorder extends RoundedRectangleBorder {
+  RoundedCornerShapeBorder()
+      : super(
+          borderRadius: BorderRadius.circular(12),
+        );
 }

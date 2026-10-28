@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../models/map_pin.dart';
 import '../../../theme/app_colors.dart';
@@ -24,26 +23,32 @@ class ArchitecturalMapCanvas extends StatelessWidget {
 
         return Stack(
           children: [
-            // 1. Vector Map Background Custom Painter
-            CustomPaint(
-              size: Size(width, height),
-              painter: _ArchitecturalMapPainter(),
+            // 1. Vector Map Background Custom Painter matching preview_map.html
+            Positioned.fill(
+              child: CustomPaint(
+                size: Size(width, height),
+                painter: _ArchitecturalMapPainter(),
+              ),
             ),
 
-            // 2. Interactive Map Pins
+            // 2. Interactive Map Pins with exact tip alignment
             ...pins.map((pin) {
               final isSelected = pin.estateId == selectedEstateId;
               final posX = pin.xPercent * width;
               final posY = pin.yPercent * height;
 
               return Positioned(
-                left: posX - 44,
-                top: posY - 36,
-                child: GestureDetector(
-                  onTap: () => onPinSelected(pin.estateId),
-                  child: _MapPinBubble(
-                    priceLabel: pin.priceLabel,
-                    isSelected: isSelected,
+                left: posX,
+                top: posY,
+                child: FractionalTranslation(
+                  translation: const Offset(-0.5, -1.0),
+                  child: GestureDetector(
+                    onTap: () => onPinSelected(pin.estateId),
+                    behavior: HitTestBehavior.opaque,
+                    child: _MapPinBubble(
+                      priceLabel: pin.priceLabel,
+                      isSelected: isSelected,
+                    ),
                   ),
                 ),
               );
@@ -73,12 +78,15 @@ class _MapPinBubble extends StatelessWidget {
         // Pill Box
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: EdgeInsets.symmetric(
+            horizontal: isSelected ? 12 : 10,
+            vertical: isSelected ? 6 : 5,
+          ),
           decoration: BoxDecoration(
             color: isSelected ? AppColors.darkFabBg : Colors.white,
             borderRadius: BorderRadius.circular(50),
             border: isSelected
-                ? null
+                ? Border.all(color: const Color(0xFF52B788), width: 1.5)
                 : Border.all(
                     color: AppColors.outlineVariant.withOpacity(0.4),
                     width: 1,
@@ -86,10 +94,10 @@ class _MapPinBubble extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: isSelected
-                    ? AppColors.darkFabBg.withOpacity(0.4)
-                    : Colors.black.withOpacity(0.12),
-                blurRadius: isSelected ? 12 : 6,
-                offset: const Offset(0, 4),
+                    ? AppColors.darkFabBg.withOpacity(0.45)
+                    : Colors.black.withOpacity(0.14),
+                blurRadius: isSelected ? 16 : 8,
+                offset: Offset(0, isSelected ? 6 : 3),
               ),
             ],
           ),
@@ -97,10 +105,19 @@ class _MapPinBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (isSelected) ...[
+                Container(
+                  width: 6,
+                  height: 6,
+                  margin: const EdgeInsets.only(right: 5),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF52B788),
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const Icon(
                   Icons.home_rounded,
                   color: Colors.white,
-                  size: 14,
+                  size: 13,
                 ),
                 const SizedBox(width: 4),
               ],
@@ -109,7 +126,7 @@ class _MapPinBubble extends StatelessWidget {
                 style: TextStyle(
                   color: isSelected ? Colors.white : AppColors.onSurface,
                   fontWeight: FontWeight.w700,
-                  fontSize: 12.5,
+                  fontSize: isSelected ? 13 : 12,
                 ),
               ),
             ],
@@ -156,13 +173,20 @@ class _TrianglePainter extends CustomPainter {
 class _ArchitecturalMapPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
+    const double refW = 390.0;
+    const double refH = 844.0;
+    final double sx = size.width / refW;
+    final double sy = size.height / refH;
+
+    double x(double v) => v * sx;
+    double y(double v) => v * sy;
+
     const canvasBg = Color(0xFFE6EFE4);
     const riverColor = Color(0xFFBADBC5);
-    const zoneGreen = Color(0xFFD6EBD7);
+    const parkGreen = Color(0xFFD6EBD7);
+    const parkStroke = Color(0xFFD3E2D1);
     const roadColor = Colors.white;
     const roadBorder = Color(0xFFD0DDD0);
-    const parcelColor = Color(0xFFF0F6EE);
-    const parcelBorder = Color(0xFFD3E2D1);
     const gridColor = Color(0xFFD9E6D8);
 
     // 1. Base Canvas
@@ -171,158 +195,126 @@ class _ArchitecturalMapPainter extends CustomPainter {
       Paint()..color = canvasBg,
     );
 
-    // 2. Architectural Grid Lines
+    // 2. Architectural Grid
     final gridPaint = Paint()
       ..color = gridColor
       ..strokeWidth = 1.0;
 
-    for (double x = 0; x < size.width; x += 80) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    for (double gx = 0; gx < size.width; gx += 70 * sx) {
+      canvas.drawLine(Offset(gx, 0), Offset(gx, size.height), gridPaint);
     }
-    for (double y = 0; y < size.height; y += 80) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    for (double gy = 0; gy < size.height; gy += 70 * sy) {
+      canvas.drawLine(Offset(0, gy), Offset(size.width, gy), gridPaint);
     }
 
-    // 3. Circular Eco-Zoning Patches
-    final zonePaint = Paint()
-      ..color = zoneGreen.withOpacity(0.45)
+    // 3. Green Nature Parks / Reserves (exact curves from preview_map.html SVG)
+    final parkPaint = Paint()
+      ..color = parkGreen
       ..style = PaintingStyle.fill;
+    final parkStrokePaint = Paint()
+      ..color = parkStroke
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
 
-    canvas.drawCircle(
-      Offset(size.width * 0.25, size.height * 0.32),
-      size.width * 0.28,
-      zonePaint,
-    );
-
-    canvas.drawCircle(
-      Offset(size.width * 0.82, size.height * 0.24),
-      size.width * 0.22,
-      Paint()
-        ..color = zoneGreen.withOpacity(0.35)
-        ..style = PaintingStyle.fill,
-    );
-
-    // 4. Lake Austin / Colorado River Ribbon
-    final riverPath = Path()
-      ..moveTo(0, size.height * 0.35)
-      ..cubicTo(
-        size.width * 0.25,
-        size.height * 0.38,
-        size.width * 0.45,
-        size.height * 0.32,
-        size.width * 0.65,
-        size.height * 0.35,
-      )
-      ..cubicTo(
-        size.width * 0.82,
-        size.height * 0.38,
-        size.width * 0.92,
-        size.height * 0.33,
-        size.width,
-        size.height * 0.34,
-      )
-      ..lineTo(size.width, size.height * 0.44)
-      ..cubicTo(
-        size.width * 0.88,
-        size.height * 0.46,
-        size.width * 0.68,
-        size.height * 0.44,
-        size.width * 0.50,
-        size.height * 0.42,
-      )
-      ..cubicTo(
-        size.width * 0.32,
-        size.height * 0.45,
-        size.width * 0.15,
-        size.height * 0.47,
-        0,
-        size.height * 0.44,
-      )
+    // Park 1: Northwest Westlake Reserve
+    final p1 = Path()
+      ..moveTo(x(40), y(180))
+      ..quadraticBezierTo(x(120), y(160), x(180), y(210))
+      ..quadraticBezierTo(x(210), y(270), x(140), y(320))
+      ..quadraticBezierTo(x(60), y(310), x(40), y(240))
       ..close();
+    canvas.drawPath(p1, parkPaint);
+    canvas.drawPath(p1, parkStrokePaint);
 
+    // Park 2: Northeast Hilltop Park
+    final p2 = Path()
+      ..moveTo(x(220), y(140))
+      ..quadraticBezierTo(x(340), y(120), x(370), y(200))
+      ..quadraticBezierTo(x(360), y(290), x(280), y(270))
+      ..quadraticBezierTo(x(220), y(220), x(220), y(140))
+      ..close();
+    canvas.drawPath(p2, parkPaint);
+    canvas.drawPath(p2, parkStrokePaint);
+
+    // Park 3: Southwest Barton Creek Greenbelt
+    final p3 = Path()
+      ..moveTo(x(30), y(420))
+      ..quadraticBezierTo(x(120), y(400), x(170), y(460))
+      ..quadraticBezierTo(x(150), y(540), x(60), y(550))
+      ..quadraticBezierTo(x(20), y(490), x(30), y(420))
+      ..close();
+    canvas.drawPath(p3, parkPaint);
+    canvas.drawPath(p3, parkStrokePaint);
+
+    // Park 4: Southeast Travis Heights Reserve
+    final p4 = Path()
+      ..moveTo(x(240), y(400))
+      ..quadraticBezierTo(x(340), y(380), x(380), y(440))
+      ..quadraticBezierTo(x(370), y(530), x(260), y(520))
+      ..quadraticBezierTo(x(210), y(470), x(240), y(400))
+      ..close();
+    canvas.drawPath(p4, parkPaint);
+    canvas.drawPath(p4, parkStrokePaint);
+
+    // 4. Lake Austin / Colorado River Ribbon (exact SVG path from preview_map.html)
+    final river = Path()
+      ..moveTo(x(-20), y(360))
+      ..cubicTo(x(80), y(340), x(160), y(410), x(240), y(370))
+      ..cubicTo(x(310), y(330), x(360), y(380), x(420), y(360))
+      ..lineTo(x(420), y(420))
+      ..cubicTo(x(350), y(440), x(290), y(390), x(230), y(430))
+      ..cubicTo(x(150), y(480), x(80), y(400), x(-20), y(430))
+      ..close();
     canvas.drawPath(
-      riverPath,
+      river,
       Paint()
-        ..color = riverColor
+        ..color = riverColor.withOpacity(0.9)
         ..style = PaintingStyle.fill,
     );
 
-    // 5. Rotated Architectural Parcels
-    void drawParcel(Offset center, double width, double height, double deg) {
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(deg * math.pi / 180);
-
-      final rect = Rect.fromCenter(
-        center: Offset.zero,
-        width: width,
-        height: height,
-      );
-
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..color = parcelColor
-          ..style = PaintingStyle.fill,
-      );
-      canvas.drawRect(
-        rect,
-        Paint()
-          ..color = parcelBorder
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5,
-      );
-
-      canvas.restore();
-    }
-
-    drawParcel(Offset(size.width * 0.22, size.height * 0.48), 65, 50, 12);
-    drawParcel(Offset(size.width * 0.72, size.height * 0.26), 70, 55, -15);
-    drawParcel(Offset(size.width * 0.65, size.height * 0.52), 80, 60, 8);
-
-    // 6. Road Highways Network
-    void drawRoad(Path path, double width) {
+    // 5. White Architectural Highway Network (exact SVG curves)
+    void drawCurvedRoad(Path path, double width) {
       canvas.drawPath(
         path,
         Paint()
           ..color = roadBorder
           ..style = PaintingStyle.stroke
-          ..strokeWidth = width + 2.5,
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = width + 2.0,
       );
       canvas.drawPath(
         path,
         Paint()
           ..color = roadColor
           ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
           ..strokeWidth = width,
       );
     }
 
-    final highway1 = Path()
-      ..moveTo(size.width * 0.3, 0)
-      ..cubicTo(
-        size.width * 0.38,
-        size.height * 0.22,
-        size.width * 0.55,
-        size.height * 0.36,
-        size.width * 0.75,
-        size.height * 0.52,
-      )
-      ..lineTo(size.width, size.height * 0.62);
-    drawRoad(highway1, 7.0);
+    // Highway North-South 1 (Mopac / Loop 1)
+    final r1 = Path()
+      ..moveTo(x(60), y(-20))
+      ..quadraticBezierTo(x(80), y(300), x(70), y(860));
+    drawCurvedRoad(r1, 10.0 * sx);
 
-    final highway2 = Path()
-      ..moveTo(0, size.height * 0.18)
-      ..cubicTo(
-        size.width * 0.22,
-        size.height * 0.24,
-        size.width * 0.42,
-        size.height * 0.28,
-        size.width * 0.60,
-        size.height * 0.40,
-      )
-      ..lineTo(size.width * 0.85, size.height * 0.65);
-    drawRoad(highway2, 6.0);
+    // Highway East-West (State Hwy 71 / 290)
+    final r2 = Path()
+      ..moveTo(x(-20), y(260))
+      ..quadraticBezierTo(x(200), y(240), x(410), y(270));
+    drawCurvedRoad(r2, 8.0 * sx);
+
+    // Highway North-South 2 (I-35 Corridor)
+    final r3 = Path()
+      ..moveTo(x(320), y(-20))
+      ..quadraticBezierTo(x(300), y(450), x(330), y(860));
+    drawCurvedRoad(r3, 7.0 * sx);
+
+    // Highway diagonal connector
+    final r4 = Path()
+      ..moveTo(x(180), y(860))
+      ..quadraticBezierTo(x(200), y(500), x(210), y(-20));
+    drawCurvedRoad(r4, 6.0 * sx);
   }
 
   @override

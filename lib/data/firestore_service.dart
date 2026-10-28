@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/advisor.dart';
 import '../models/estate.dart';
 import '../models/filter_category.dart';
@@ -11,7 +13,32 @@ class FirestoreService {
   static const String baseUrl =
       'https://firestore.googleapis.com/v1/projects/$projectId/databases/(default)/documents/estates';
 
+  static FirebaseFirestore? get _firestoreInstance {
+    try {
+      return FirebaseFirestore.instance;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<List<Estate>> fetchEstates() async {
+    // 1. Try fetching via official Cloud Firestore SDK
+    try {
+      final db = _firestoreInstance;
+      if (db != null) {
+        final querySnapshot = await db.collection('estates').get();
+        if (querySnapshot.docs.isNotEmpty) {
+          final list = querySnapshot.docs.map((doc) {
+            return _mapDataToEstate(doc.id, doc.data());
+          }).toList();
+          return list;
+        }
+      }
+    } catch (e) {
+      debugPrint('Firestore SDK fetch error (trying REST fallback): $e');
+    }
+
+    // 2. Fallback to direct REST API
     try {
       final client = HttpClient();
       final request = await client.getUrl(Uri.parse('$baseUrl?key=$apiKey'));
@@ -23,16 +50,93 @@ class FirestoreService {
         final documents = data['documents'] as List<dynamic>? ?? [];
 
         if (documents.isNotEmpty) {
-          return documents.map((d) => _documentToEstate(d)).toList();
+          return documents.map((d) => _restDocumentToEstate(d)).toList();
         }
       }
-    } catch (_) {
-      // Fallback to local MockData if offline or network unavailable
+    } catch (e) {
+      debugPrint('Firestore REST fetch error: $e');
     }
+
+    // 3. Fallback to local MockData if offline or network unavailable
     return [MockData.featuredEstate, ...MockData.popularEstates];
   }
 
-  static Estate _documentToEstate(dynamic doc) {
+  static Estate _mapDataToEstate(String docId, Map<String, dynamic> data) {
+    String getString(String key, String def) => data[key]?.toString() ?? def;
+    String? getOptString(String key) => data[key]?.toString();
+    int? getOptInt(String key) {
+      final val = data[key];
+      if (val == null) return null;
+      if (val is int) return val;
+      return int.tryParse(val.toString());
+    }
+    double? getOptDouble(String key) {
+      final val = data[key];
+      if (val == null) return null;
+      if (val is double) return val;
+      if (val is int) return val.toDouble();
+      return double.tryParse(val.toString());
+    }
+    bool getBool(String key, bool def) {
+      final val = data[key];
+      if (val is bool) return val;
+      if (val is String) return val.toLowerCase() == 'true';
+      return def;
+    }
+
+    final imageKey = getString('imageKey', docId);
+    final imageAsset = 'assets/$imageKey.png';
+
+    final categoryStr = getString('category', 'VILLAS').toUpperCase();
+    final category = FilterCategory.values.firstWhere(
+      (c) => c.name.toUpperCase() == categoryStr,
+      orElse: () => FilterCategory.villas,
+    );
+
+    final advisor = Advisor(
+      name: getString('advisorName', 'Sarah Jenkins'),
+      title: getString('advisorTitle', 'Principal Private Advisor'),
+      division: getString('advisorDivision', 'Austin Luxury Division'),
+      avatarAsset: MockData.sarahJenkins.avatarAsset,
+    );
+
+    final priceInt = getOptInt('price') ?? 3850000;
+
+    return Estate(
+      id: docId,
+      title: getString('title', 'Austin Estate'),
+      price: priceInt,
+      formattedPrice: getString('formattedPrice', '\$$priceInt'),
+      originalPrice: getOptString('originalPrice'),
+      priceDropNotice: getOptString('priceDropNotice'),
+      openHouseNotice: getOptString('openHouseNotice'),
+      availabilityTag: getOptString('availabilityTag'),
+      estimatedMonthly: getString('estimatedMonthly', 'Est. \$12,000/mo'),
+      address: getString('address', 'Austin, TX'),
+      beds: getOptInt('beds'),
+      baths: getOptInt('baths'),
+      sqft: getOptInt('sqft'),
+      rating: getOptDouble('rating'),
+      reviewCount: getOptInt('reviewCount'),
+      imageAsset: imageAsset,
+      statusTag: getOptString('statusTag'),
+      areaTag: getOptString('areaTag'),
+      verifiedLuxury: getBool('verifiedLuxury', false),
+      isFeatured: getBool('isFeatured', false),
+      category: category,
+      description: getOptString('description'),
+      narrative: getOptString('narrative'),
+      acreage: getOptString('acreage'),
+      leedRating: getOptString('leedRating'),
+      terraceSpec: getOptString('terraceSpec'),
+      isUnderContract: getBool('isUnderContract', false),
+      photoCount: getOptInt('photoCount') ?? 4,
+      isSaved: getBool('isSaved', false),
+      advisor: advisor,
+    );
+  }
+
+  static Estate _restDocumentToEstate(dynamic doc) {
     final fields = doc['fields'] as Map<String, dynamic>? ?? {};
     final docName = (doc['name'] as String? ?? '').split('/').last;
 
